@@ -1,5 +1,5 @@
 import os,math,csv
-MAOA_Results = 'C:\\People\\Kaichen\\WATGEN\\Runs_4NM_fadFIXED\\Runs_4\\L1-357-001'
+MAOA_Results = 'Root Dir'
 Lig = MAOA_Results + '\\Storage\\Lig'
 Prot = MAOA_Results + '\\Storage\\Prot'
 Prot_Lig = MAOA_Results + '\\Storage\\Prot_Lig'
@@ -79,7 +79,6 @@ def read_LIG_MAOA(ligand_term,folder1, complex_term, folder2, option):
                     if split[3] in polar_C:
                         if split[2] != polar_C[split[3]]:                    
                             alip_C.append(type_conv(split))
-                        #========================
                         
                     else:
                         if split[2] in Lig_polar:
@@ -124,10 +123,7 @@ def read_LIG_MAOA(ligand_term,folder1, complex_term, folder2, option):
                         
                     else:
                         FAD.append(split[2])
-#                        if split[2] in Lig_polar:
-#                            pass
-#                        else:
-#                            alip_C.append(type_conv(split))
+
                     
         watg1.close() 
         print(FAD)          
