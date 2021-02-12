@@ -1,1 +1,594 @@
-#Temp
+import os, numpy, math
+from Bio.PDB import PDBParser
+#from Bio.PDB.Polypeptide import PDBuilder
+MAOA_Results = 'root dir'
+Lig = MAOA_Results + '\\Storage\\Lig'
+Prot = MAOA_Results + '\\Storage\\Prot'
+Prot_Lig = MAOA_Results + '\\Storage\\Prot_Lig'
+Compare2 = MAOA_Results + '\\WaterAnalysisCompare2'
+os.chdir(Compare2)
+
+
+def selection_sort(input_list,index, subindex): #subindex is the nTH term in subarray
+    length = len(input_list) 
+    for idx in range(0,length):
+        if input_list[idx][subindex] >0:
+            min_idx = idx
+            for j in range( idx +1, length):                
+                if input_list[min_idx][index] > input_list[j][index]:
+                    min_idx = j
+                
+            input_list[idx], input_list[min_idx] = input_list[min_idx], input_list[idx]
+               
+    return input_list 
+
+def aliphaticC(atm):
+    if atm[0] == 'C' and len(atm) > 1:
+        return True
+    else:
+        return False 
+
+
+class PDB:
+    def __init__(self,folder,fname):  
+        os.chdir(folder)
+        X = PDBParser(PERMISSIVE = 1,QUIET=True)
+        structure = X.get_structure(fname, fname+'.pdb')      
+        self.res =  [r for r in structure.get_residues()]
+        self.lig = []
+        for atm in self.res[495]:
+            self.lig.append(atm.getname())
+
+
+
+
+class compare_out:
+
+    def __init__(self,fname):
+        WOUT = open(fname, 'r')
+        self.out = WOUT.readlines()
+        WOUT.close()
+        
+
+        self.matching_info = {}
+
+
+        lenth = len(self.out)
+        n = lenth - 20
+                
+        while n < lenth:
+            if 'total water interface 1 ' in self.out[n]:
+                wat1 = int(self.out[n].split(':')[1])
+                self.matching_info.update( {'wat_protlig': wat1 })
+                
+                wat2 = int(self.out[n+1].split(':')[1])
+                self.matching_info.update( {'wat_prot': wat2 })
+                
+                match_between_interface = int(self.out[n+2].split(':')[1])
+                self.matching_info.update( {'match between interface': match_between_interface })                    
+
+                no_match1 = int(self.out[n+4].split(':')[1])
+                self.matching_info.update( {'no match1': no_match1 })
+                
+                no_match2 = int(self.out[n+11].split(':')[1])
+                self.matching_info.update( {'no match2': no_match2 })
+                
+                possible_match1 = int(self.out[n+5].split(':')[1])
+                self.matching_info.update( {'possible match1': possible_match1 })
+                
+                possible_match2 = int(self.out[n+12].split(':')[1])
+                self.matching_info.update( {'possible_match2': possible_match2 })
+                
+            n+= 1            
+            
+    
+    def get_pair(cls,option):
+#Option = 1, protlig-prot
+#Option = 2, prot - protlig 
+        lenth = len(cls.out)
+        start, stop = 0,0
+        temp = []
+        n = lenth - cls.matching_info['wat_prot'] - 100 #Need to update this later        
+        
+        while n < lenth:
+            if 'water matches for structures' in cls.out[n]:
+                start = n+1
+            if 'total water interface 1 'in cls.out[n]:
+                stop = n-1        
+            n+=1
+            
+        if option == 1:
+            prot = list(range(1, cls.matching_info['wat_prot']+1,1))
+            for entry in cls.out[start:stop]:
+                split = entry[:10].split()
+                protlig_index, prot_index = int(split[0]), int(split[1])
+                temp.append([protlig_index,prot_index])
+                if prot_index != 0:
+                    prot.remove(prot_index)
+                    
+
+            selection_sort(temp,1,1)
+            temp.insert(0,['protlig','prot'])
+
+                
+        elif option == 2:
+            prot = list(range(1, cls.matching_info['wat_prot']+1,1))
+            for entry in cls.out[start:stop]:
+                split = entry[:10].split()
+                protlig_index, prot_index = int(split[0]), int(split[1])                
+                if prot_index != 0:
+                    temp.append([prot_index,protlig_index])
+                    prot.remove(prot_index)
+            
+            for protwat in prot:
+                temp.append([protwat,0])
+            selection_sort(temp,0,1)
+            temp.insert(0,['prot','protlig'])
+            #Where the sorting supposed to be
+            
+        else:
+            print('NOT an acceptable order. Please try again')
+            return 0
+        
+
+#            
+        
+        return temp
+#        selection_sort(temp)
+#        leng = len(temp)
+#        count = 0
+#        for n in range(0,leng):
+#            if temp[n][1] == 0:
+#                count +=1
+#        for n in range(0,count):
+#            temp.append(temp.pop(0))
+    
+    
+    #Suggest more pairs based on distance alone?
+def nomatch_pair(matching_list):
+    nomatch, match_pair = [], []
+    if len(matching_list) <= 1:
+        print('Matching list not updated, please try again.')
+        return 0
+    else:
+        first, second = matching_list[0][0], matching_list[0][1]
+        print('Order of matching is:', first, second)
+        nomatch.append([matching_list[0]])
+        match_pair.append([matching_list[0]])
+        for pairs in matching_list[1:]:
+            if 0 in pairs:
+                nomatch.append(pairs)
+
+    return nomatch
+
+
+def match_core(distset1,distset2,free1,free2):
+    matchlist = {}
+    delta = 10
+    while delta > 0:
+
+        pre1 = len(free1)
+        for idx1 in free1:
+            for n in range(0, 3):
+                if distset1[idx1][n][0] in free2: 
+                    
+                    #Some steps here to avoid duplicates 
+                    #SAME PROBLEM. NEED TO CONSIDER AGAIN pl139-287 and 292-187
+                    #Print out distance to check again
+                    matchlist[idx1] = [distset1[idx1][n][0],distset1[idx1][n][1]] 
+                                                   
+                    
+                    free2.remove(distset1[idx1][n][0])                       
+                    free1.remove(idx1)
+                    
+                    break
+                   
+                else:
+                    for match in matchlist:
+                        matchX = matchlist[match]
+                        if matchX[0] == distset1[idx1][n][0]:                                    
+                            if matchX[1] > distset1[idx1][n][1]:
+                                if n <= 1 and (distset1[idx1][n+1][0] in free2):                                                
+                                    free2.append(distset1[idx1][n][0])
+                                    try:
+                                        matchX[0] = distset1([idx1][n+1][0])                                          
+                                        matchX[1] = distset1([idx1][n+1][1])     
+                                        break
+                                    except:
+                                        print('IDX:', idx1)
+                                else:
+                                    free1.append(match)
+                                    del matchlist[match]
+                                    matchlist[idx1] = [distset1[idx1][n][0],distset1[idx1][n][1]]
+                                    break
+        post1 = len(free1)
+        #delta = abs(pre1-post1)
+        delta -= 1
+    return matchlist
+
+def PDB_to_coor(sourcePDB,folder):
+    os.chdir(folder)
+    fileX = PDBParser(PERMISSIVE = 1,QUIET=True)
+    structureX = fileX.get_structure(sourcePDB, sourcePDB+'.pdb')    
+    resX = [r for r in structureX.get_residues()]
+    all_wat = []
+    for res in range(496,len(resX)):
+        all_wat.append(resX[res]['O'].get_coord())
+    return all_wat
+
+def get_dist(coors_main, coors_side):
+    
+    delta = [coors_main[0] - coors_side[0],coors_main[1] - coors_side[1],coors_main[2] - coors_side[2]]
+    dist = numpy.linalg.norm(delta)               
+    return dist
+
+
+def re_matchalt(nomat1,nomat2,sourcePDB_PL, sourcePDB_P,folder, order):
+    #nomat1:protlig, nomat2:prot
+    #Order1 = PL-P-rematch, order2 = P-PL-rematch
+    #Order3 = exclusive nomatch in PL
+    #Order4 = exclusive nomatch in P
+    waters_PL, waters_P = [], []
+    suggest_match= []
+#    os.chdir(folder)
+#    PL = PDBParser(PERMISSIVE = 1,QUIET=True)
+#    sPROTLIG = PL.get_structure(sourcePDB_PL, sourcePDB_PL+'.pdb')      
+#    
+#    res = [r for r in sPROTLIG.get_residues()]
+#    all_wat_PL = []
+#        
+#    for residx in range(496,len(res)):       
+#        all_wat_PL.append(res[residx]['O'].get_coord())
+    all_wat_PL = PDB_to_coor(sourcePDB_PL,folder)
+    for pairs in nomat1[1:]:
+        waters_PL.append(all_wat_PL[pairs[0]-1])
+
+        
+#    p = PDBParser(PERMISSIVE = 1,QUIET=True)    
+#    sPROT = p.get_structure(sourcePDB_P, sourcePDB_P+'.pdb')                    
+#    
+#    res1 = [r for r in sPROT.get_residues()]
+#    all_wat_P = []
+#    for residx in range(496,len(res1)):        
+#        all_wat_P.append(res1[residx]['O'].get_coord())
+    
+    all_wat_P = PDB_to_coor(sourcePDB_P,folder)    
+    
+    for pairs in nomat2[1:]: 
+        waters_P.append(all_wat_P[pairs[0]-1])
+    
+    dist_PLP, dist_PPL = {} , {}
+#    print(len(waters_PL), 'Source coor for PL', waters_PL[0:10])
+    
+    for PL in range(0,len(waters_PL)):
+        temp_dist = [[0,2],[0,2],[0,2]]
+        for P in range(0,len(waters_P)):
+            dist =  get_dist(waters_PL[PL],waters_P[P])          
+            if dist < 2:                   
+                for n in range(0,3):
+                    if temp_dist[n][1]> dist:                          
+                        temp_dist[n] = [nomat2[P+1][0],dist]
+                        break
+
+        if temp_dist[0] != [0,2]:
+            dist_PLP[nomat1[PL+1][0]] = temp_dist
+
+    for P in range(0,len(waters_P)):
+        temp_dist = [[0,2],[0,2],[0,2]]
+        for PL in range(0,len(waters_PL)):
+            dist = get_dist(waters_PL[PL],waters_P[P])             
+            if dist < 2:
+                for n in range(0,3):
+                    if temp_dist[n][1]> dist:
+                        temp_dist[n] =[nomat1[PL+1][0],dist]                            
+                        break
+        if temp_dist[0] != [0,2]:
+            dist_PPL[nomat2[P+1][0]] = temp_dist  
+    
+          
+    #print('136 and 292',dist_PLP[136],dist_PLP[292])
+    
+    free_PL, free_P = [],[]
+    for PL in dist_PLP.keys():
+        free_PL.append(PL)
+    for P in dist_PPL.keys():
+        free_P.append(P)  
+        
+    if order in [1,2]:
+                               
+        if order == 1:
+            matchlist = match_core(dist_PLP,dist_PPL,free_PL,free_P)
+
+        elif order == 2:
+            matchlist = match_core(dist_PPL,dist_PLP,free_P,free_PL)
+        
+        print('Stable matching list of length', len(matchlist), 'as shown:')
+        #print(matchlist)
+        return matchlist
+    
+    elif order in [3,4]:
+        dist_crit = 1.5
+        if order ==3:
+            exclusive = []
+            suggest_match = match_core(dist_PLP,dist_PPL,free_PL,free_P)
+            for PL in range(1, len(nomat1)):
+                count  = 0
+                for q in suggest_match:
+                    if nomat1[PL][0] == q:
+                        count +=1
+                        break
+                if count == 0:
+                    exclusive.append(nomat1[PL][0])
+            print(exclusive)
+            
+            distance_check = []
+            for n in range(0, len(exclusive)):
+                for k in range(0,len(all_wat_P)):#(Opposite structure)
+                    dist = get_dist(all_wat_PL[exclusive[n] -1],all_wat_P[k])
+                    if dist < dist_crit:
+                        distance_check.append(exclusive[n])
+                        break
+            print('Here is the list of wats that still have wats in opposite structure that within 1.5A: \n', distance_check)
+            if len(exclusive) == len(distance_check):
+                print('All waters have wat within {} A in opposite structure. '.format(dist_crit))                    
+            else:
+                for wat in exclusive:
+                    if wat not in distance_check:
+                        print('Wat {} does not have one wat around in opposite structure. '.format(wat))
+
+
+            
+        else:
+            exclusive = []
+            suggest_match = match_core(dist_PPL,dist_PLP,free_P,free_PL)
+           
+            for P in range(1, len(nomat2)):
+                count  = 0
+                for q in suggest_match:
+                    if nomat2[P][0] == q:
+                        count +=1
+                        break
+                if count == 0:
+                    exclusive.append(nomat2[P][0])
+
+            
+            distance_check = []
+            for n in range(0, len(exclusive)):
+                for k in range(0,len(all_wat_PL)):#(Opposite structure)     
+                    dist = get_dist(all_wat_P[exclusive[n] -1],all_wat_PL[k])
+                    if dist < dist_crit:
+                        distance_check.append(exclusive[n])
+                        break
+            
+            print('Here is the list of wats that still have wats in opposite structure that within {}:  {} \n'.format(dist_crit,distance_check))
+            if len(exclusive) == len(distance_check):
+                print('All waters have wat within {} A in opposite structure. '.format(dist_crit))                    
+            else:
+                for wat in exclusive:
+                    if wat not in distance_check:
+                        print('Wat {} does not have one wat around in opposite structure. '.format(wat))
+        
+        return exclusive
+    
+    if order == 'X':
+        dist_allPPL, dist_allPLP = {}, {}
+        #get distance
+        for P in range(0,len(all_wat_P)):
+            temp_dist = [[0,2],[0,2],[0,2]]
+            for PL in range(0,len(all_wat_PL)):
+                dist = get_dist(all_wat_P[P],all_wat_PL[PL])
+                if dist < 2:
+                    for n in range(0,3):
+                        if temp_dist[n][1]> dist:
+                            temp_dist[n] =[PL+1,dist]                            
+                            break
+            if temp_dist[0] != [0,2]:
+                dist_allPPL[P+1] = temp_dist 
+        
+        for PL1 in range(0,len(all_wat_PL)):
+            temp_dist = [[0,2],[0,2],[0,2]]
+            for P1 in range(0,len(all_wat_P)):
+                dist = get_dist(all_wat_PL[PL1],all_wat_P[P1])
+                if dist < 2:
+                    for n in range(0,3):
+                        if temp_dist[n][1]> dist:
+                            temp_dist[n] =[P1+1,dist]                            
+                            break
+            if temp_dist[0] != [0,2]:
+                dist_allPLP[PL1+1] = temp_dist 
+                
+        
+        free_PL_all, free_P_all = [],[]
+        for PL in dist_allPLP.keys():
+            free_PL_all.append(PL)
+        for P in dist_allPPL.keys():
+            free_P_all.append(P)  
+        print('Set of all distances',dist_allPLP,dist_allPPL)
+        matchlist = match_core(dist_allPLP, dist_allPPL,free_PL_all,free_P_all)
+        print('Total matchlist as shown',matchlist)
+        print('Length of the matchlist is: ', len(matchlist))
+
+        
+    else:
+        print('Not an acceptable order!')
+        return 0 
+
+
+
+def re_match_join(remat1,remat2):
+    countX = 0
+    join = []
+    for n in remat1:        
+        for q in remat2:            
+            if remat1[n][0] == q and n == remat2[q][0]:
+                #print(n,'in pair 1 equal to', q , 'in pair 2')
+                join.append([n,remat1[n][0],remat1[n][1]])
+                countX += 1
+    print('Total pairs equal to each other is:', countX)
+    join = selection_sort(join,0,0)
+    return join
+
+def exclusive_position(exclusive_wat, PDB_prot, PDB_protlig,folder,option):
+#Try to determine where the no match waters are. 
+#Must use related PDB file.
+#Option 1 protlig, option 2 prot
+#Option 3: refine interactions for exculsive waters
+    os.chdir(folder)
+    wat_coor_prot, wat_coor_protlig, lig_coor, FAD_coor = [] , [] , [], []
+    FAD_atm, lig_atm = [], []
+    
+    
+    X = PDBParser(PERMISSIVE = 1,QUIET=True)
+    Prot = X.get_structure(PDB_prot, PDB_prot+'.pdb')      
+    Protlig = X.get_structure(PDB_protlig, PDB_protlig+'.pdb') 
+    all_res1 = [r for r in Protlig.get_residues()]
+    all_res2 = [r for r in Prot.get_residues()]
+    
+    if option == 1:
+        for single_wat in exclusive_wat:
+            idx = 495+ single_wat#495 residues
+            wat_coor_protlig.append(all_res1[idx]['O'].get_coord())
+    elif option == 2 or option == 3:
+        for single_wat in exclusive_wat:
+            idx = 495+ single_wat#495 residues
+            wat_coor_prot.append(all_res2[idx]['O'].get_coord())
+    else:
+        print('Not an option. End reading PDB')
+        return 0
+        
+        
+    for atoms in all_res2[495]:
+        FAD_atm.append(atoms.get_name())
+        FAD_coor.append(atoms.get_coord())
+    for atoms in all_res1[495]:
+        name = atoms.get_name()
+        if name not in FAD_atm:
+            lig_atm.append(name)
+            lig_coor.append(atoms.get_coord())
+    
+        
+    #Criteria: if any of the waters is/are within 5A of the ligand.
+    count = 0
+    dist_list = []
+    if option == 1 :        
+        for wat in range(0,len(wat_coor_protlig)):
+            each_wat = [exclusive_wat[wat],0,7]
+            for L in range(0, len(lig_coor)):                
+                delta = [wat_coor_protlig[wat][0] - lig_coor[L][0],wat_coor_protlig[wat][1] - lig_coor[L][1],wat_coor_protlig[wat][2] - lig_coor[L][2]]
+                dist = numpy.linalg.norm(delta)
+                
+                if dist <=  each_wat[2]:
+                    count += 1
+                    #print('Found one exclusive water {0} within {2} to ligand atom {1}.'.format(exclusive_wat[wat], lig_atm[L],dist))
+                    each_wat[2] = dist
+                    each_wat[1] = lig_atm[L]
+
+            dist_list.append(each_wat)
+
+    elif option == 2:
+        for wat in range(0,len(wat_coor_prot)):
+            each_wat = [exclusive_wat[wat],0,7]
+            for L in range(0, len(lig_coor)):                
+                delta = [wat_coor_prot[wat][0] - lig_coor[L][0],wat_coor_prot[wat][1] - lig_coor[L][1],wat_coor_prot[wat][2] - lig_coor[L][2]]
+                dist = numpy.linalg.norm(delta)
+                if dist <=  each_wat[2]:
+                    count += 1
+                    #print('Found one exclusive water {0} within {2} to ligand atom {1}.'.format(exclusive_wat[wat], FAD_atm[L],dist))
+                    each_wat[2] = dist
+                    each_wat[1] = lig_atm[L]
+            dist_list.append(each_wat)
+    #Get the closest distance and return it
+    #We also need to know where the other ones are. Set a position by distance to other residues?            
+    
+    elif option == 3:
+        status = ['Mixed', 'HP only', 'HB only', 'Removed']
+        for wat in range(0,len(wat_coor_prot)):
+            each_wat = [exclusive_wat[wat],'+','_']#[1] atm, [2]status
+            for L in range(0, len(lig_coor)):                
+                delta = [wat_coor_prot[wat][0] - lig_coor[L][0],wat_coor_prot[wat][1] - lig_coor[L][1],wat_coor_prot[wat][2] - lig_coor[L][2]]
+                dist = numpy.linalg.norm(delta)
+                #Some criteria:
+                if dist<= 2.5:
+                    if aliphaticC(lig_atm[L]) is True:
+                        each_wat[2] += 'R_'     #remove
+                        each_wat[1] += (lig_atm[L] + '+')
+                        break
+                    else:
+                        each_wat[2] += ('HB_')  #mark
+                        each_wat[1] += (lig_atm[L] + '+')
+                elif dist >2.5 and dist <=7:
+                    if aliphaticC(lig_atm[L]) is True:
+                        each_wat[2] += ('HP_')    #mark
+                        each_wat[1] += (lig_atm[L] + '+')
+                    else:
+                        each_wat[2] += ('HB*_')  #mark
+                        each_wat[1] += (lig_atm[L] + '+')
+                        
+                
+            dist_list.append(each_wat)
+         
+            
+            
+        remove_count = 0
+        idle_count = 0
+        scoring = []
+        for wat in dist_list:
+            HBcount, HPcount = 0,0
+            
+            split = wat[2].split("_")
+            if  'R' in split:
+                remove_count += 1
+                pass
+            else:
+                indivwat = [wat[0]]
+                for element in split:                
+                    if element == 'HB':
+                        HBcount += 1
+                    elif element == 'HB*':
+                        HBcount += 1
+                    elif element == 'HP':
+                        HPcount+=1
+                if HBcount == 0 and HPcount == 0:
+                    idle_count += 1
+                indivwat.append(HBcount)
+                indivwat.append(HPcount)
+                scoring.append(indivwat)
+            
+        
+            
+        print(scoring)
+        print('Number of waters removed in prot_only',remove_count)
+        print("Number of wats that does nothing", idle_count)
+        
+            
+    
+    print(dist_list, len(dist_list))
+    
+    
+#Set criteria for 63(?) still not-matched waters in protonly
+#Let wat that's 3A within hydrophobic residue of ligand considered completely removed
+#If wat within 2.5A of a HYDROPHILIC atom of ligand will be marked (lost interaction, will be counted)
+#Need to record ALL interactions of a single wat molecule
+
+
+os.chdir(Compare2)
+if __name__ == '__main__':
+    LIG357 = compare_out('compare.out')
+    PROT_ATM = (Compare2, 'new_L1-357-001_Prot_Only_FWS')
+    PROTLIG_ATM = (Compare2,'new_L1-357-001_Prot_Lig_FWS') 
+
+    nomatch1 = nomatch_pair(LIG357.get_pair(1))
+
+    nomatch2 = nomatch_pair(LIG357.get_pair(2))
+
+    remat_pair4 = re_matchalt(nomatch1,nomatch2,'new_L1-357-001_Prot_Lig_FWS','new_L1-357-001_Prot_Only_FWS', Compare2, 'X')
+
+    
+    
+
+
+
+
+
+
+
